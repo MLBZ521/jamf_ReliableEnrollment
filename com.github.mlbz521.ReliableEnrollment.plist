@@ -16,5 +16,9 @@
 	<integer>600</integer>
 	<key>AbandonProcessGroup</key>
 	<true/>
+	<key>StandardErrorPath</key>
+	<string>/var/log/jamf_ReliableEnrollment.log</string>
+	<key>StandardOutPath</key>
+	<string>/var/log/jamf_ReliableEnrollment.log</string>
 </dict>
 </plist>
