@@ -3,7 +3,7 @@
 ###################################################################################################
 # Script Name:  jamf_DeployReliableEnrollment.sh
 # By:  Zack Thompson / Created:  3/23/2018
-# Version:  0.1 / Updated:  3/23/2018 / By:  ZT
+# Version:  1.0 / Updated:  3/28/2018 / By:  ZT
 #
 # Description:  This script creates a LaunchDaemon and a Script, then loads a LaunchDaemon.
 #
@@ -30,14 +30,15 @@ cat > "${scriptLocation}" <<'EOF'
 
 ###################################################################################################
 # Script Name:  jamf_ReliableEnrollment.sh
-# By:  Zack Thompson / Created:  11/20/2017
-# Version:  1.0 / Updated:  11/21/2017 / By:  ZT
+# By:  Zack Thompson / Created:  3/23/2018
+# Version:  1.0 / Updated:  3/28/2018 / By:  ZT
 #
-# Description:  This script stages files and loads a LaunchDaemon.
+# Description:  This script verifies the JSS and DP are accessible and if so, runs the enrollmentComplete event.
 #
 ###################################################################################################
 
-/usr/bin/logger -s "*****  ReliableEnrollment process:  START  *****"
+echo " "
+echo "*****  ReliableEnrollment process:  START  *****"
 
 ##################################################
 # Define Variables
@@ -54,28 +55,28 @@ cat > "${scriptLocation}" <<'EOF'
 
 tearDown() {
 	# Unload LaunchDaemon
-	/usr/bin/logger -s "Unloading LaunchDaemon"
+	echo "Unloading LaunchDaemon..."
 
 	# Determine proper launchctl syntax
-	if [[ ${osVersion} -ge 11 ]]; then
-		/bin/launchctl bootout system $launchDaemonLocation
-	elif [[ ${osVersion} -le 10 ]]; then
-		/bin/launchctl unload $launchDaemonLocation
+	if [[ $osVersion -ge 11 ]]; then
+		/bin/launchctl bootout system "${launchDaemonLocation}"
+	elif [[ $osVersion -le 10 ]]; then
+		/bin/launchctl unload "${launchDaemonLocation}"
 	fi
 
 	# Function exitStatus
 	exitStatus $?
 
 	# Remove LaunchDaemon
-	/usr/bin/logger -s "Deleting LaunchDaemon"
-	/bin/rm -f $launchDaemonLocation
+	echo "Deleting LaunchDaemon..."
+	/bin/rm -f "${launchDaemonLocation}"
 
 	# Function exitStatus
 	exitStatus $?
 
 	# Delete Self
-	/usr/bin/logger -s "Deleting Script"
-	/bin/rm -f "$0"
+	echo "Deleting Script..."
+	/bin/rm -f "${0}"
 
 	# Function exitStatus
 	exitStatus $?
@@ -83,11 +84,11 @@ tearDown() {
 
 exitStatus() {
 	if [[ $1 != "0" ]]; then
-		/usr/bin/logger -s " -> Failed"
-		/usr/bin/logger -s "*****  ReliableEnrollment process:  FAILED  *****"
-		exit 2
+		echo "  -> Failed"
+		echo "*****  ReliableEnrollment process:  FAILED  *****"
+		exit 1
 	else
-		/usr/bin/logger -s " -> Success!"
+		echo "  -> Success!"
 	fi
 }
 
@@ -96,31 +97,39 @@ exitStatus() {
 
 # Check if the .JamfEnrollmentDone file exits.
 if [[ -e "${doneLocation}" ]]; then
+	echo "This machine has completed the Enrollment process."
+	echo "Performing clean up of the Reliable Enrollment process."
+	echo " "
 
 	# Function tearDown
 	tearDown
 
+	echo "Clean up complete!"
 else
 	if [[ -e $jamfBinary ]]; then
-		/usr/bin/logger -s "Checking if the current JSS instance is available..."
-		checkAvailablity=$(${jamfBinary} checkJSSConnection)
+		echo "Checking if the current JSS instance is available..."
+		checkAvailablity=$($jamfBinary checkJSSConnection)
 
 		# Function exitStatus
 		exitStatus $?
 
 		if [[ "${checkAvailablity}" != *"The JSS is available"* ]]; then
 			# If the JSS is unavailable, suspend further processing...
-			/usr/bin/logger -s "The Jamf Pro Server is unavailable at this time.  Suspending until next interval..."
-			/usr/bin/logger -s "*****  ReliableEnrollment process:  SUSPENDED  *****"
-			exit 1
+			echo "The Jamf Pro Server is unavailable at this time.  Suspending until next interval..."
+			echo "*****  ReliableEnrollment process:  SUSPENDED  *****"
+			exit 3
 		else
 			# If the JSS is available, then continue...
-			/usr/bin/logger -s "Checking if the distribution point is available..."
+			echo "Checking if the distribution point is available..."
 			/sbin/ping -oq "${jamfDP}" >/dev/null
 
 			# Function exitStatus
 			exitStatus $?
 		fi
+	else
+		echo "ERROR:  Unable to locate the Jamf Binary"
+		echo "*****  ReliableEnrollment process:  FAILED  *****"
+		exit 2
 	fi
 
 	# If we can communicate with the Jamf Services, run the enrollmentComplete Trigger.
@@ -128,8 +137,8 @@ else
 
 fi
 
-/usr/bin/logger -s "*****  ReliableEnrollment process:  COMPLETE  *****"
-
+echo "*****  ReliableEnrollment process:  COMPLETE  *****"
+echo " "
 exit 0
 EOF
 
@@ -168,12 +177,35 @@ EOF
 # Verify the files exist...
 if [[ -e "${scriptLocation}" && -e "${launchDaemonLocation}" ]]; then
 
+	echo "Setting permissions on the Jamf Reliable Enrollment Script..."
+	/bin/chmod 744 "${scriptLocation}"
+
+	# Check if the LaucnhDaemon is running, if so restart it in case a change was made to the plist file.
 	# Determine proper launchctl syntax based on OS Version 
-	if [[ ${osVersion} -ge 11 ]]; then
-		/bin/launchctl bootstrap system $launchDaemonLocation
+	if [[ $osVersion -ge 11 ]]; then
+		running=$(/bin/launchctl print system/$launchDaemonLabel)
+		exitCode=$?
+
+		if [[ $exitCode == 0 ]]; then
+			echo "LaunchDaemon is currently started; stopping now..."
+			/bin/launchctl bootout system/$launchDaemonLabel
+		fi
+
+		echo "Loading LaunchDaemon..."
+		/bin/launchctl bootstrap system "${launchDaemonLocation}"
 		/bin/launchctl enable system/$launchDaemonLabel
-	elif [[ ${osVersion} -le 10 ]]; then
-		/bin/launchctl load $launchDaemonLocation
+
+	elif [[ $osVersion -le 10 ]]; then
+		running=$(/bin/launchctl list $launchDaemonLabel)
+		exitCode=$?
+
+		if [[ $exitCode == 0 ]]; then
+			echo "LaunchDaemon is currently started; stopping now..."
+			/bin/launchctl unload "${launchDaemonLocation}"
+		fi
+
+		echo "Loading LaunchDaemon..."
+		/bin/launchctl load "${launchDaemonLocation}"
 	fi
 
 	echo "*****  deploy_ReliableEnrollment process:  COMPLETE  *****"
