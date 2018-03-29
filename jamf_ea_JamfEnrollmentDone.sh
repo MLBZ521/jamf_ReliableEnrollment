@@ -3,7 +3,7 @@
 ###################################################################################################
 # Script Name:  jamf_ea_JamfEnrollmentDone.sh
 # By:  Zack Thompson / Created:  3/23/2018
-# Version:  0.1 / Updated:  3/23/2018 / By:  ZT
+# Version:  1.0 / Updated:  3/28/2018 / By:  ZT
 #
 # Description:  A Jamf Extension Attribute to verify if a machine has completed enrollment.
 #
@@ -21,6 +21,8 @@ jamfBinary="/usr/local/bin/jamf"
 if [[ -e "${doneLocation}" ]]; then
 	echo "<result>Enrollment Complete</result>"
 else
+	echo "<result>Pending</result>"
+	# You may want to comment the below line out until your pre-existing machines have been "marked".
 	$jamfBinary policy -event enrollmentComplete
 fi
 
